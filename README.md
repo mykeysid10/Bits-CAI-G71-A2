@@ -15,8 +15,7 @@ Implements both:
 
 ## 📊 Core Dataset: `financial_qa_sample_data.csv`
 
-**Purpose**:  
-This dataset serves as the foundation for both:
+**Purpose**:  This dataset serves as the foundation for both:
 - Fine-tuning the GPT-2 model
 - Building the RAG retrieval index
 
