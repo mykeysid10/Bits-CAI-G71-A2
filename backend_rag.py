@@ -1,6 +1,6 @@
 """
 Retrieval-Augmented Generation (RAG) system for financial Q&A.
-Combines dense and sparse retrieval with cross-encoder reranking.
+Uses lightweight alternatives to NLTK for tokenization and stopwords.
 """
 
 import os
@@ -9,33 +9,37 @@ import time
 import pickle
 import faiss
 import string
+import re
 import warnings
 from typing import Dict, Tuple, List
 from sentence_transformers import SentenceTransformer
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords 
 
 warnings.filterwarnings("ignore")
 
-# ===== Fix NLTK Data Loading =====
-import nltk
-
-# Set custom NLTK data path (works locally & in cloud)
-nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
-os.makedirs(nltk_data_path, exist_ok=True)
-nltk.data.path.append(nltk_data_path)  # Add to NLTK's search paths
-
-# Download only if missing (suppress prompts)
-try:
-    nltk.data.find("tokenizers/punkt")  # Checks if 'punkt' exists
-except LookupError:
-    nltk.download("punkt", quiet=True, download_dir=nltk_data_path)  # Forces download to custom path
-
-try:
-    nltk.data.find("corpora/stopwords")  # Checks if 'stopwords' exists
-except LookupError:
-    nltk.download("stopwords", quiet=True, download_dir=nltk_data_path)
+# Lightweight stopwords list (English)
+STOPWORDS = {
+    'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', "you're", 
+    "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 'yourselves', 'he', 
+    'him', 'his', 'himself', 'she', "she's", 'her', 'hers', 'herself', 'it', 
+    "it's", 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 
+    'what', 'which', 'who', 'whom', 'this', 'that', "that'll", 'these', 'those', 
+    'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 
+    'having', 'do', 'does', 'did', 'doing', 'a', 'an', 'the', 'and', 'but', 'if', 
+    'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 
+    'about', 'against', 'between', 'into', 'through', 'during', 'before', 'after', 
+    'above', 'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 
+    'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 
+    'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 
+    'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 
+    'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', "don't", 
+    'should', "should've", 'now', 'd', 'll', 'm', 'o', 're', 've', 'y', 'ain', 
+    'aren', "aren't", 'couldn', "couldn't", 'didn', "didn't", 'doesn', "doesn't", 
+    'hadn', "hadn't", 'hasn', "hasn't", 'haven', "haven't", 'isn', "isn't", 'ma', 
+    'mightn', "mightn't", 'mustn', "mustn't", 'needn', "needn't", 'shan', "shan't", 
+    'shouldn', "shouldn't", 'wasn', "wasn't", 'weren', "weren't", 'won', "won't", 
+    'wouldn', "wouldn't"
+}
 
 class RAGGuardrails:
     """Input validation and guardrails for RAG system."""
@@ -51,14 +55,7 @@ class RAGGuardrails:
     
 
     def validate_query(self, query: str) -> Tuple[bool, str, str]:
-        """Check for harmful or greeting queries.
-        
-        Args:
-            query: User input query to validate
-            
-        Returns:
-            Tuple of (is_valid, message, category)
-        """
+        """Check for harmful or greeting queries."""
         query_lower = query.lower().strip()
         
         if any(pattern in query_lower for pattern in self.harmful_patterns["greetings"]):
@@ -79,12 +76,7 @@ class RAGGuardrails:
 class RAGSystem:
     """Main RAG system implementation."""
     
-    def __init__(self, artifacts_dir = "rag-artifacts"):
-        """Initialize RAG system with pre-built indexes.
-        
-        Args:
-            artifacts_dir: Directory containing pre-built indexes and artifacts
-        """
+    def __init__(self, artifacts_dir="rag-artifacts"):
         self.artifacts_dir = artifacts_dir
         self.guardrails = RAGGuardrails()
         self.load_models()
@@ -96,44 +88,32 @@ class RAGSystem:
         print("Loading RAG models and indexes...")
         start_time = time.time()
         
-        # self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-        # Create local models directory if it doesn't exist
-        os.makedirs('local_models', exist_ok = True)
-        # Initialize with local cache
+        os.makedirs('local_models', exist_ok=True)
         self.embed_model = SentenceTransformer(
             'all-MiniLM-L6-v2',
-            cache_folder = 'local_models',
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            cache_folder='local_models',
+            device='cuda' if torch.cuda.is_available() else 'cpu'
         )
-        self.faiss_index = faiss.read_index(os.path.join(self.artifacts_dir, "faiss_index.index"))
         
+        self.faiss_index = faiss.read_index(os.path.join(self.artifacts_dir, "faiss_index.index"))
         with open(os.path.join(self.artifacts_dir, "bm25_index.pkl"), "rb") as f:
             self.bm25_index, self.chunks = pickle.load(f)
         
         self.cross_encoder_model, self.cross_encoder_tokenizer = self.initialize_cross_encoder()
-        
         print(f"Models loaded in {time.time() - start_time:.2f} seconds")
     
 
     def initialize_qa_model(self):
-        """Initialize QA model pipeline.
-        
-        Returns:
-            Initialized QA pipeline
-        """
+        """Initialize QA model pipeline."""
         return pipeline(
             "question-answering",
-            model = "deepset/roberta-base-squad2",
-            device = 0 if torch.cuda.is_available() else -1
+            model="deepset/roberta-base-squad2",
+            device=0 if torch.cuda.is_available() else -1
         )
     
 
     def initialize_cross_encoder(self):
-        """Initialize cross-encoder for reranking.
-        
-        Returns:
-            Tuple of (model, tokenizer)
-        """
+        """Initialize cross-encoder for reranking."""
         model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
         return (
             AutoModelForSequenceClassification.from_pretrained(model_name),
@@ -141,75 +121,40 @@ class RAGSystem:
         )
     
 
-    def preprocess_query(self, query: str) -> List[str]:
-        """Preprocess query for BM25 search.
-        
-        Args:
-            query: Input query string
-            
-        Returns:
-            List of preprocessed tokens
-        """
-        query = query.lower().translate(str.maketrans('', '', string.punctuation))
-        return [word for word in word_tokenize(query) if word not in stopwords.words("english")]
+    def simple_tokenize(self, text: str) -> List[str]:
+        """Lightweight tokenizer without NLTK."""
+        # Remove punctuation and lowercase
+        text = re.sub(f"[{re.escape(string.punctuation)}]", "", text.lower())
+        # Split into words and filter stopwords
+        return [word for word in text.split() if word not in STOPWORDS]
     
 
     def dense_retrieval(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Retrieve chunks using vector similarity.
-        
-        Args:
-            query: Input query
-            top_k: Number of results to return
-            
-        Returns:
-            List of retrieved chunks with scores
-        """
-        query_embedding = self.embed_model.encode([query], convert_to_numpy = True)
+        """Retrieve chunks using vector similarity."""
+        query_embedding = self.embed_model.encode([query], convert_to_numpy=True)
         distances, indices = self.faiss_index.search(query_embedding, top_k)
         
         results = []
         for idx, score in zip(indices[0], distances[0]):
             if idx >= 0:
                 chunk = self.chunks[idx]
-                chunk['dense_score'] = float(1/(1 + score))  # Convert distance to similarity
+                chunk['dense_score'] = float(1/(1 + score))
                 results.append(chunk)
         
-        return sorted(results, key = lambda x: x['dense_score'], reverse = True)
+        return sorted(results, key=lambda x: x['dense_score'], reverse=True)
     
 
     def sparse_retrieval(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Retrieve chunks using BM25.
-        
-        Args:
-            query: Input query
-            top_k: Number of results to return
-            
-        Returns:
-            List of retrieved chunks with scores
-        """
-        tokenized_query = self.preprocess_query(query)
+        """Retrieve chunks using BM25."""
+        tokenized_query = self.simple_tokenize(query)
         scores = self.bm25_index.get_scores(tokenized_query)
-        top_indices = sorted(range(len(scores)), key = lambda i: scores[i], reverse = True)[:top_k]
+        top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:top_k]
         
-        results = []
-        for idx in top_indices:
-            chunk = self.chunks[idx]
-            chunk['sparse_score'] = float(scores[idx])
-            results.append(chunk)
-            
-        return results
+        return [self.chunks[idx] for idx in top_indices]
     
 
     def hybrid_retrieval(self, query: str, top_k: int = 5) -> List[Dict]:
-        """Combine dense and sparse retrieval results.
-        
-        Args:
-            query: Input query
-            top_k: Number of results to return
-            
-        Returns:
-            List of retrieved chunks with hybrid scores
-        """
+        """Combine dense and sparse retrieval results."""
         dense_results = self.dense_retrieval(query, top_k)
         sparse_results = self.sparse_retrieval(query, top_k)
         
@@ -223,47 +168,11 @@ class RAGSystem:
             sparse_score = chunk.get('sparse_score', 0)
             chunk['hybrid_score'] = (dense_score + sparse_score) / 2
         
-        return sorted(results_map.values(), key = lambda x: x['hybrid_score'], reverse = True)[:top_k]
-    
-
-    def rerank_with_cross_encoder(self, query: str, chunks: List[Dict], top_k: int = 3) -> List[Dict]:
-        """Rerank retrieved chunks using cross-encoder.
-        
-        Args:
-            query: Original query
-            chunks: Retrieved chunks to rerank
-            top_k: Number of results to return
-            
-        Returns:
-            List of reranked chunks with scores
-        """
-        features = self.cross_encoder_tokenizer(
-            [query] * len(chunks),
-            [chunk['text'] for chunk in chunks],
-            padding = True,
-            truncation = True,
-            return_tensors = "pt"
-        )
-        
-        with torch.no_grad():
-            scores = self.cross_encoder_model(**features).logits.squeeze()
-        
-        for chunk, score in zip(chunks, scores):
-            chunk['cross_encoder_score'] = float(score)
-            
-        return sorted(chunks, key = lambda x: x['cross_encoder_score'], reverse = True)[:top_k]
+        return sorted(results_map.values(), key=lambda x: x['hybrid_score'], reverse=True)[:top_k]
     
 
     def generate_answer(self, query: str, max_context_tokens: int = 1024) -> Dict:
-        """Generate answer using retrieved context.
-        
-        Args:
-            query: User question
-            max_context_tokens: Maximum context tokens for QA
-            
-        Returns:
-            Dictionary containing answer and metadata
-        """
+        """Generate answer using retrieved context."""
         start_time = time.time()
         
         is_valid, message, category = self.guardrails.validate_query(query)
@@ -277,69 +186,33 @@ class RAGSystem:
             }
         
         try:
-            retrieval_start = time.time()
+            # Retrieval and processing
             retrieved_chunks = self.hybrid_retrieval(query)
-            retrieval_time = time.time() - retrieval_start
+            reranked_chunks = sorted(
+                retrieved_chunks,
+                key=lambda x: x.get('hybrid_score', 0),
+                reverse=True
+            )[:3]
             
-            reranking_start = time.time()
-            reranked_chunks = self.rerank_with_cross_encoder(query, retrieved_chunks)
-            reranking_time = time.time() - reranking_start
+            # Build context
+            context = " ".join(chunk['text'] for chunk in reranked_chunks)
             
-            context = ""
-            token_count = 0
-            sources = set()
-            
-            for chunk in reranked_chunks:
-                chunk_tokens = word_tokenize(chunk['text'])
-                if token_count + len(chunk_tokens) > max_context_tokens:
-                    break
-                context += chunk['text'] + " "
-                token_count += len(chunk_tokens)
-                if 'source' in chunk:
-                    sources.add(chunk['source'])
-            
-            qa_start = time.time()
-            result = self.qa_model(question = query, context = context.strip())
-            qa_time = time.time() - qa_start
-            
-            confidence = result.get('score', 0.0)
-            if 'confidence' in result:
-                confidence = result['confidence']
-            
-            confidence = min(max(float(confidence), 0.0), 1.0)
+            # QA
+            result = self.qa_model(question=query, context=context.strip())
             
             return {
                 "question": query,
                 "answer": result.get('answer', "No answer could be generated"),
-                "confidence": round(confidence, 4),
+                "confidence": min(max(float(result.get('score', 0.0)), 0.0), 1.0),
                 "inference_time": round(time.time() - start_time, 4),
-                "method": "RAG",
-                "details": {
-                    "retrieval_time": round(retrieval_time, 4),
-                    "reranking_time": round(reranking_time, 4),
-                    "qa_time": round(qa_time, 4),
-                    "sources": list(sources) if sources else [],
-                    "context_used": context.strip()
-                }
+                "method": "RAG"
             }
-    
+        
         except Exception as e:
             return {
                 "question": query,
-                "answer": f"An error occurred while generating the answer: {str(e)}",
+                "answer": f"An error occurred: {str(e)}",
                 "confidence": 0.0,
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "Error"
             }
-    
-
-    def __call__(self, query: str) -> Dict:
-        """Alias for generate_answer.
-        
-        Args:
-            query: User question
-            
-        Returns:
-            Dictionary containing answer and metadata
-        """
-        return self.generate_answer(query)
