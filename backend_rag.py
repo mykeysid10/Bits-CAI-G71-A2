@@ -18,9 +18,24 @@ from nltk.corpus import stopwords
 
 warnings.filterwarnings("ignore")
 
+# ===== Fix NLTK Data Loading =====
 import nltk
-nltk.download('punkt', quiet=True)
-nltk.download('stopwords', quiet=True)
+
+# Set custom NLTK data path (works locally & in cloud)
+nltk_data_path = os.path.join(os.getcwd(), "nltk_data")
+os.makedirs(nltk_data_path, exist_ok=True)
+nltk.data.path.append(nltk_data_path)  # Add to NLTK's search paths
+
+# Download only if missing (suppress prompts)
+try:
+    nltk.data.find("tokenizers/punkt")  # Checks if 'punkt' exists
+except LookupError:
+    nltk.download("punkt", quiet=True, download_dir=nltk_data_path)  # Forces download to custom path
+
+try:
+    nltk.data.find("corpora/stopwords")  # Checks if 'stopwords' exists
+except LookupError:
+    nltk.download("stopwords", quiet=True, download_dir=nltk_data_path)
 
 class RAGGuardrails:
     """Input validation and guardrails for RAG system."""
