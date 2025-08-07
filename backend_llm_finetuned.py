@@ -75,8 +75,16 @@ class FinancialQAModel:
         else:
             # For CPU, we don't need to_empty() and can use regular to()
             self.model = self.model.to(self.device)
-        # Initialize other components
-        self.similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+        
+        # self.similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Create local models directory if it doesn't exist
+        os.makedirs('local_models', exist_ok=True)
+        # Initialize with local cache
+        self.similarity_model = SentenceTransformer(
+            'all-MiniLM-L6-v2', 
+            cache_folder='local_models',
+            device='cuda' if torch.cuda.is_available() else 'cpu'
+        )
         self.guardrails = InputGuardrails()
     
 
