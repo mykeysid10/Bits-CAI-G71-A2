@@ -2,6 +2,7 @@
 Fine-tuned GPT-2 model for financial Q&A with input guardrails.
 """
 
+import os
 import time
 import warnings
 import torch
