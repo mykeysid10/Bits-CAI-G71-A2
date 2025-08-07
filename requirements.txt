@@ -1,0 +1,8 @@
+streamlit==1.48.0
+transformers==4.55.0
+sentence-transformers==5.0.0
+torch==2.7.1
+numpy==2.3.2
+faiss-cpu==1.11.0.post1
+nltk==3.9.1
+packaging==25.0
