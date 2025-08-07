@@ -18,6 +18,9 @@ from nltk.corpus import stopwords
 
 warnings.filterwarnings("ignore")
 
+import nltk
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
 
 class RAGGuardrails:
     """Input validation and guardrails for RAG system."""
