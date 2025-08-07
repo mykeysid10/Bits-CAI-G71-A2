@@ -153,8 +153,10 @@ def home_page():
     This application provides two approaches for answering questions about our company's financial statements:
     1. **Retrieval-Augmented Generation**: Uses Retrieval (FAISS + BM25 Search), NLG (Roberta QnA), Reranking (Cross Encoder: ms-marco-MiniLM-L-6-v2).
     2. **Fine-Tuned Model**: Uses a language model (GPT-2) fine-tuned on financial Q&A pairs.
+
+    **Note:** Due to a 1GB space constraint in the deployed environment, we're using a fine-tuned GPT-2 model instead of the larger GPT-2-medium model. However, all reported results in our documentation are based on GPT-2-medium.
     
-    **Note**: In this deployed version, we're using a fine-tuned GPT-2 model due to 1GB Space restriction for deployment, we couldn't deploy the larger GPT-2-medium model. However, in our reports, all results are based on the GPT-2-medium model.
+    **Note:** The Finetuned-LLM tab may respond slowly (~ 2 to 3 min per query).
     
     Select an option from the sidebar to test either system!
     """)
