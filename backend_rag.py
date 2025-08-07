@@ -203,7 +203,7 @@ class RAGSystem:
             return {
                 "question": query,
                 "answer": result.get('answer', "No answer could be generated"),
-                "confidence": min(max(float(result.get('score', 0.0)), 0.0), 1.0),
+                "confidence": round(min(max(float(result.get('score', 0.0)), 0.0), 1.0), 2),
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "RAG"
             }
