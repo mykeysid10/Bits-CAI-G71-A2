@@ -78,7 +78,15 @@ class RAGSystem:
         print("Loading RAG models and indexes...")
         start_time = time.time()
         
-        self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # self.embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Create local models directory if it doesn't exist
+        os.makedirs('local_models', exist_ok = True)
+        # Initialize with local cache
+        self.embed_model = SentenceTransformer(
+            'all-MiniLM-L6-v2',
+            cache_folder = 'local_models',
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        )
         self.faiss_index = faiss.read_index(os.path.join(self.artifacts_dir, "faiss_index.index"))
         
         with open(os.path.join(self.artifacts_dir, "bm25_index.pkl"), "rb") as f:
