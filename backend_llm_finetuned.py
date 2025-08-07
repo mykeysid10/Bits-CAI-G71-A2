@@ -60,18 +60,24 @@ class FinancialQAModel:
     """Fine-tuned GPT-2 model for financial Q&A."""
     
     def __init__(self, model_path, tokenizer_path):
-        """Initialize model and tokenizer.
-        
-        Args:
-            model_path: Path to fine-tuned model
-            tokenizer_path: Path to tokenizer
-        """
+        # Initialize tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        self.model = AutoModelForCausalLM.from_pretrained(model_path)
+        # Initialize model with proper device handling
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        # Load model with appropriate settings
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
+        )
+        # Move model to device
+        if self.device == "cuda":
+            self.model = self.model.to(self.device)
+        else:
+            # For CPU, we don't need to_empty() and can use regular to()
+            self.model = self.model.to(self.device)
+        # Initialize other components
         self.similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
         self.guardrails = InputGuardrails()
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model.to(self.device)
     
 
     def generate_answer(self, question):
