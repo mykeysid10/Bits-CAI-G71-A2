@@ -50,7 +50,8 @@ class RAGGuardrails:
             "violence": ["kill", "attack", "shoot", "bomb"],
             "financial_crime": ["launder", "fraud", "scam"],
             "personal_info": ["ssn", "credit card", "password"],
-            "greetings": ["hi", "hello", "hey", "how are you", "what's up"]
+            "greetings": ["hi", "hello", "hey", "how are you", "what's up"],
+            "out_of_scope": ["capital of", "france", "weather", "sports", "movie"]
         }
     
 
@@ -65,6 +66,8 @@ class RAGGuardrails:
             if category == "greetings":
                 continue
             if any(pattern in query_lower for pattern in patterns):
+                if category == "out_of_scope":
+                    return False, "This question is outside my financial domain expertise.", "out_of_scope"
                 return False, f"I cannot answer questions related to {category.replace('_', ' ')}.", "guardrail"
         
         if len(query_lower.split()) < 3:
@@ -180,7 +183,7 @@ class RAGSystem:
             return {
                 "question": query,
                 "answer": message,
-                "confidence": 0.95 if category == "greeting" else 0.97,
+                "confidence": 0.95 if category in ["greeting", "out_of_scope"] else 0.97,
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "Guardrail" if category != "greeting" else "Greeting"
             }
@@ -200,10 +203,22 @@ class RAGSystem:
             # QA
             result = self.qa_model(question=query, context=context.strip())
             
+            confidence = round(min(max(float(result.get('score', 0.0)), 0.0), 1.0), 2)
+            
+            # Add confidence threshold check
+            if confidence < 0.5:
+                return {
+                    "question": query,
+                    "answer": "I'm not confident about this answer. Could you please rephrase your financial question?",
+                    "confidence": confidence,
+                    "inference_time": round(time.time() - start_time, 4),
+                    "method": "Low Confidence"
+                }
+            
             return {
                 "question": query,
                 "answer": result.get('answer', "No answer could be generated"),
-                "confidence": round(min(max(float(result.get('score', 0.0)), 0.0), 1.0), 2),
+                "confidence": confidence,
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "RAG"
             }
