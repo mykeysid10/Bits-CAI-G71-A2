@@ -89,49 +89,46 @@ class FinancialQAModel:
             # Prepare input with financial-specific prompt
             inputs = self.tokenizer(
                 f"Question: {question}\nFinancial Answer:",
-                return_tensors="pt",
-                truncation=True,
-                max_length=512
+                return_tensors="pt"
             ).to(self.device)
             
             # Generate response with conservative settings
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=75,  # Increased for better answers but still controlled
+                max_new_tokens=25,  # keep short
                 do_sample=True,
-                temperature=0.3,
-                top_p=0.9,
+                temperature=0.001,
+                top_p=0.001,
                 return_dict_in_generate=True,
                 output_scores=True,
                 eos_token_id=self.tokenizer.eos_token_id,
                 pad_token_id=self.tokenizer.eos_token_id
             )
             
-            # Calculate confidence from token probabilities
+            # Calculate mean confidence over all generated tokens
             token_probs = []
             for step_scores, token_id in zip(outputs.scores, outputs.sequences[0][inputs.input_ids.shape[1]:]):
                 step_probs = step_scores.softmax(dim=-1)
                 token_probs.append(step_probs[0, token_id].item())
+
             confidence = sum(token_probs) / len(token_probs) if token_probs else 0.1
             
-            # Decode and clean output
+            # Decode output
             full_output = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
             answer_raw = full_output.split("Financial Answer:")[-1].strip()
             
-            # Extract first complete answer and remove duplicates
+            # Robust sentence splitting that ignores decimal points
             sentences = re.split(r'(?<!\d)\.(?!\d)\s*', answer_raw)
             sentences = [s.strip() for s in sentences if s.strip()]
+
+            # Keep only the first complete sentence
             clean_answer = sentences[0] + '.' if sentences else answer_raw
-            
-            # Remove any repeated phrases
-            clean_answer = re.sub(r'\b(\w+)\b(?=.*\b\1\b)', '', clean_answer, flags=re.I)
-            clean_answer = ' '.join(clean_answer.split())  # Normalize whitespace
             
             # Confidence filter
             if confidence < 0.5:
                 return {
                     "question": question,
-                    "answer": "I'm not confident about this answer. Please ask a different financial question.",
+                    "answer": "I'm not confident about this answer. Please rephrase your financial question.",
                     "confidence": round(confidence, 4),
                     "inference_time": round(time.time() - start_time, 4),
                     "method": "Low Confidence"
@@ -139,17 +136,21 @@ class FinancialQAModel:
             
             return {
                 "question": question,
-                "answer": clean_answer[:500],  # Hard limit for safety
+                "answer": clean_answer,
                 "confidence": round(confidence, 4),
                 "inference_time": round(time.time() - start_time, 4),
-                "method": "Fine-tuned GPT-2"
+                "method": "Fine-tuned"
             }
             
         except Exception as e:
             return {
                 "question": question,
-                "answer": f"Error processing your question: {str(e)}",
+                "answer": f"Error: {str(e)}",
                 "confidence": 0.0,
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "Error"
             }
+            
+    def __call__(self, question):
+        """Alias for generate_answer."""
+        return self.generate_answer(question)
