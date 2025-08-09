@@ -1,44 +1,33 @@
 """
-Fine-tuned GPT-2 model for financial Q&A with enhanced guardrails.
-Combines the working implementation with new features.
+Fine-tuned GPT-2 model for financial Q&A with enhanced guardrails and complete sentence generation.
 """
 
-import os
 import time
-import warnings
 import torch
-import transformers
+import re
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from sentence_transformers import SentenceTransformer
-from packaging import version
-
-warnings.filterwarnings("ignore")
 
 class InputGuardrails:
-    """Enhanced input validation combining both implementations."""
+    """Enhanced input validation for fine-tuned model."""
     
     def __init__(self):
-        """Initialize harmful patterns and responses."""
+        """Initialize guardrail patterns and responses."""
         self.harmful_categories = {
             "violence": {
-                "patterns": ["kill", "attack", "shoot", "bomb", "murder"],
+                "patterns": ["kill", "attack", "shoot", "bomb"],
                 "response": "I cannot assist with violent requests."
             },
             "financial_crime": {
-                "patterns": ["launder", "fraud", "scam", "insider trading"],
+                "patterns": ["launder", "fraud", "scam"],
                 "response": "I cannot discuss illegal financial activities."
             },
-            "personal_info": {
-                "patterns": ["ssn", "credit card", "password", "private key"],
-                "response": "I cannot assist with sensitive personal information."
-            },
             "out_of_scope": {
-                "patterns": ["capital of", "france", "weather", "sports", "movie"],
+                "patterns": ["capital of", "france", "weather", "sports"],
                 "response": "This question is outside my financial expertise."
             },
             "greetings": {
-                "patterns": ["hi", "hello", "hey", "how are you", "what's up"],
-                "response": "Hello! I specialize in financial questions about Phillips Edison & Company."
+                "patterns": ["hi", "hello", "hey"],
+                "response": "Hello! Please ask about financial statements."
             }
         }
     
@@ -47,44 +36,23 @@ class InputGuardrails:
         query_lower = query.lower().strip()
         for category, data in self.harmful_categories.items():
             if any(pattern in query_lower for pattern in data["patterns"]):
-                if category == "greetings":
-                    return False, data["response"], "greeting"
-                elif category == "out_of_scope":
-                    return False, data["response"], "out_of_scope"
-                return False, data["response"], "guardrail"
+                return False, data["response"], category
         return True, None, None
 
 class FinancialQAModel:
-    """Fine-tuned model combining working implementation with new features."""
+    """Fine-tuned model with confidence filtering and complete sentence generation."""
     
     def __init__(self, model_path, tokenizer_path):
-        """Initialize model with proper device handling."""
-        # Initialize tokenizer
+        """Initialize model components."""
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        
-        # Initialize model with proper device handling
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # Load model with appropriate settings
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
-        ).to(self.device)
-        
-        # Initialize similarity model with local cache
-        os.makedirs('local_models', exist_ok=True)
-        self.similarity_model = SentenceTransformer(
-            'all-MiniLM-L6-v2',
-            cache_folder='local_models',
-            device='cuda' if torch.cuda.is_available() else 'cpu'
-        )
-        
+        self.model = AutoModelForCausalLM.from_pretrained(model_path)
         self.guardrails = InputGuardrails()
-        self.model.eval()  # Set to evaluation mode
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model.to(self.device)
     
     def generate_answer(self, question):
-        """Generate answer with confidence scoring and input validation."""
+        """Generate answer with validation, confidence checks, and strict cleanup."""
         start_time = time.time()
         
         # Input validation
@@ -95,63 +63,76 @@ class FinancialQAModel:
                 "answer": message,
                 "confidence": 0.95 if category in ["greeting", "out_of_scope"] else 0.97,
                 "inference_time": round(time.time() - start_time, 4),
-                "method": "Input Guardrail"
+                "method": category.replace("_", " ").title()
             }
         
         try:
             # Prepare input with financial-specific prompt
-            prompt = f"Question: {question}\nAnswer:"
+            prompt = f"Question: {question}\nFinancial Answer:"
             inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
             
-            # Configure generation parameters
-            generation_kwargs = {
+            # Generate response with settings optimized for complete sentences
+            outputs = self.model.generate(
                 **inputs,
-                "max_new_tokens": 25,
-                "num_return_sequences": 1,
-                "pad_token_id": self.tokenizer.eos_token_id,
-                "output_scores": True,
-                "return_dict_in_generate": True,
-                "do_sample": True,
-                "temperature": 0.001,
-                "top_p": 0.001
-            }
-            
-            # Generate response
-            with torch.no_grad():
-                outputs = self.model.generate(**generation_kwargs)
+                max_new_tokens=50,
+                do_sample=True,
+                temperature=0.001,
+                top_p=0.001,
+                return_dict_in_generate=True,
+                output_scores=True,
+                eos_token_id=self.tokenizer.eos_token_id,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
             
             # Calculate confidence scores
-            if hasattr(self.model, 'compute_transition_scores'):
-                transition_scores = self.model.compute_transition_scores(
-                    outputs.sequences, outputs.scores, normalize_logits=True
-                )
-                avg_confidence = torch.exp(transition_scores[0]).mean().item()
-            else:
-                # Fallback confidence calculation for older versions
-                avg_confidence = 0.7
+            token_probs = []
+            for step_scores, token_id in zip(outputs.scores, outputs.sequences[0][inputs.input_ids.shape[1]:]):
+                step_probs = step_scores.softmax(dim=-1)
+                token_probs.append(step_probs[0, token_id].item())
+
+            confidence = sum(token_probs) / len(token_probs) if token_probs else 0.1
             
-            # Process output
+            # Decode and process output
             full_output = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
-            generated_ans = full_output.split("Answer:")[-1].split("\n")[0].strip()
+            answer_raw = full_output.split("Financial Answer:")[-1].strip()
+            
+            # Enhanced sentence processing from working local version
+            # Step 1: Split into sentences (handling ". " delimiter)
+            sentences = [s.strip() for s in answer_raw.split('. ') if s.strip()]
+            
+            # Step 2: Remove duplicates while preserving order
+            seen = set()
+            dedup_sentences = []
+            for sent in sentences:
+                if sent not in seen:
+                    seen.add(sent)
+                    dedup_sentences.append(sent)
+            
+            # Step 3: Reconstruct answer with proper punctuation
+            clean_answer = '. '.join(dedup_sentences) + '.' if dedup_sentences else answer_raw
+            
+            # Fallback if no sentences found (e.g., if model didn't use periods)
+            if not clean_answer.strip('.').strip():
+                clean_answer = answer_raw.split('\n')[0][:100]  # Take first line or first 100 chars
             
             # Confidence filtering
-            if avg_confidence < 0.5:
+            if confidence < 0.5:
                 return {
                     "question": question,
                     "answer": "I'm not confident about this answer. Please rephrase your financial question.",
-                    "confidence": round(avg_confidence, 4),
+                    "confidence": round(confidence, 4),
                     "inference_time": round(time.time() - start_time, 4),
                     "method": "Low Confidence"
                 }
             
             return {
                 "question": question,
-                "answer": generated_ans,
-                "confidence": round(avg_confidence, 4),
+                "answer": clean_answer,
+                "confidence": round(confidence, 4),
                 "inference_time": round(time.time() - start_time, 4),
-                "method": "Fine-tuned GPT-2"
+                "method": "Fine-tuned"
             }
-        
+            
         except Exception as e:
             return {
                 "question": question,
