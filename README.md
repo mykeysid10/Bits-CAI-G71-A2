@@ -15,22 +15,19 @@ Implements both:
 
 ## 📊 Core Dataset: `financial_qna_pairs.csv`
 
-**Purpose**:  This dataset serves as the foundation for both:
-- Fine-tuning the GPT-2 model
-- Building the RAG retrieval index
-
 ## ✨ Key Features
 
 - **Input guardrails** to filter harmful/inappropriate queries.
 - **Hybrid retrieval** combining BM25 and FAISS vector search.
 - **Cross-encoder reranking** for improved relevance.
+- **Domain Knowledge** using GPT-2-medium Finetuning.
 - **Streamlit-based GUI** for intuitive interaction.
 
 ## 🛠️ Technical Stack
 
 | Component               | Technology Used                          |
 |-------------------------|------------------------------------------|
-| Language Model          | Fine-tuned GPT-2                         |
+| Language Model          | Fine-tuned GPT-2-medium                  |
 | Vector Database         | FAISS                                    |
 | Sparse Retrieval        | BM25                                     |
 | Reranking               | cross-encoder/ms-marco-MiniLM-L-6-v2     |
