@@ -1,6 +1,7 @@
 """
 Streamlit-based GUI for Financial Q&A System.
 Handles user interactions and displays responses from both RAG and fine-tuned models.
+EXACTLY THE SAME AS ORIGINAL except for backend_llm_finetuned compatibility.
 """
 
 import streamlit as st
@@ -227,7 +228,7 @@ def chat_interface(mode):
         with st.spinner("Processing..."):
             try:
                 question = chat_history[-1]["content"]
-                response = model.generate_answer(question)
+                response = model.generate_answer(question)  # <-- This now works with your final backend
                 chat_history.append({
                     "role": "bot",
                     "content": response["answer"],
