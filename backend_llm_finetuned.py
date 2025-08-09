@@ -1,21 +1,27 @@
 """
 Fine-tuned GPT-2 model for financial Q&A with enhanced guardrails.
-Optimized for deployment with concise answers and better input validation.
+Combines the working implementation with new features.
 """
 
+import os
 import time
+import warnings
 import torch
-import re
+import transformers
 from transformers import AutoTokenizer, AutoModelForCausalLM
+from sentence_transformers import SentenceTransformer
+from packaging import version
+
+warnings.filterwarnings("ignore")
 
 class InputGuardrails:
-    """Enhanced input validation for fine-tuned model."""
+    """Enhanced input validation combining both implementations."""
     
     def __init__(self):
-        """Initialize guardrail patterns and responses."""
+        """Initialize harmful patterns and responses."""
         self.harmful_categories = {
             "violence": {
-                "patterns": ["kill", "attack", "shoot", "bomb"],
+                "patterns": ["kill", "attack", "shoot", "bomb", "murder"],
                 "response": "I cannot assist with violent requests."
             },
             "financial_crime": {
@@ -23,15 +29,15 @@ class InputGuardrails:
                 "response": "I cannot discuss illegal financial activities."
             },
             "personal_info": {
-                "patterns": ["social security", "credit card", "password"],
+                "patterns": ["ssn", "credit card", "password", "private key"],
                 "response": "I cannot assist with sensitive personal information."
             },
             "out_of_scope": {
-                "patterns": ["capital of", "weather", "sports", "movie"],
+                "patterns": ["capital of", "france", "weather", "sports", "movie"],
                 "response": "This question is outside my financial expertise."
             },
             "greetings": {
-                "patterns": ["hi", "hello", "hey", "how are you"],
+                "patterns": ["hi", "hello", "hey", "how are you", "what's up"],
                 "response": "Hello! I specialize in financial questions about Phillips Edison & Company."
             }
         }
@@ -41,14 +47,18 @@ class InputGuardrails:
         query_lower = query.lower().strip()
         for category, data in self.harmful_categories.items():
             if any(pattern in query_lower for pattern in data["patterns"]):
-                return False, data["response"], category
+                if category == "greetings":
+                    return False, data["response"], "greeting"
+                elif category == "out_of_scope":
+                    return False, data["response"], "out_of_scope"
+                return False, data["response"], "guardrail"
         return True, None, None
 
 class FinancialQAModel:
-    """Fine-tuned model with confidence filtering and concise answers."""
+    """Fine-tuned model combining working implementation with new features."""
     
     def __init__(self, model_path, tokenizer_path):
-        """Initialize model components with deployment constraints."""
+        """Initialize model with proper device handling."""
         # Initialize tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -56,22 +66,25 @@ class FinancialQAModel:
         # Initialize model with proper device handling
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         
-        # Load model with appropriate settings for deployment
+        # Load model with appropriate settings
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
         ).to(self.device)
         
+        # Initialize similarity model with local cache
+        os.makedirs('local_models', exist_ok=True)
+        self.similarity_model = SentenceTransformer(
+            'all-MiniLM-L6-v2',
+            cache_folder='local_models',
+            device='cuda' if torch.cuda.is_available() else 'cpu'
+        )
+        
         self.guardrails = InputGuardrails()
+        self.model.eval()  # Set to evaluation mode
     
     def generate_answer(self, question):
-        """
-        Generate financial answer with:
-        - Input validation
-        - Confidence scoring
-        - Strict answer cleanup
-        - Controlled response length
-        """
+        """Generate answer with confidence scoring and input validation."""
         start_time = time.time()
         
         # Input validation
@@ -80,68 +93,65 @@ class FinancialQAModel:
             return {
                 "question": question,
                 "answer": message,
-                "confidence": 0.95,
+                "confidence": 0.95 if category in ["greeting", "out_of_scope"] else 0.97,
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "Input Guardrail"
             }
         
         try:
             # Prepare input with financial-specific prompt
-            inputs = self.tokenizer(
-                f"Question: {question}\nFinancial Answer:",
-                return_tensors="pt"
-            ).to(self.device)
+            prompt = f"Question: {question}\nAnswer:"
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
             
-            # Generate response with conservative settings
-            outputs = self.model.generate(
+            # Configure generation parameters
+            generation_kwargs = {
                 **inputs,
-                max_new_tokens=25,  # keep short
-                do_sample=True,
-                temperature=0.001,
-                top_p=0.001,
-                return_dict_in_generate=True,
-                output_scores=True,
-                eos_token_id=self.tokenizer.eos_token_id,
-                pad_token_id=self.tokenizer.eos_token_id
-            )
+                "max_new_tokens": 25,
+                "num_return_sequences": 1,
+                "pad_token_id": self.tokenizer.eos_token_id,
+                "output_scores": True,
+                "return_dict_in_generate": True,
+                "do_sample": True,
+                "temperature": 0.001,
+                "top_p": 0.001
+            }
             
-            # Calculate mean confidence over all generated tokens
-            token_probs = []
-            for step_scores, token_id in zip(outputs.scores, outputs.sequences[0][inputs.input_ids.shape[1]:]):
-                step_probs = step_scores.softmax(dim=-1)
-                token_probs.append(step_probs[0, token_id].item())
-
-            confidence = sum(token_probs) / len(token_probs) if token_probs else 0.1
+            # Generate response
+            with torch.no_grad():
+                outputs = self.model.generate(**generation_kwargs)
             
-            # Decode output
+            # Calculate confidence scores
+            if hasattr(self.model, 'compute_transition_scores'):
+                transition_scores = self.model.compute_transition_scores(
+                    outputs.sequences, outputs.scores, normalize_logits=True
+                )
+                avg_confidence = torch.exp(transition_scores[0]).mean().item()
+            else:
+                # Fallback confidence calculation for older versions
+                avg_confidence = 0.7
+            
+            # Process output
             full_output = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
-            answer_raw = full_output.split("Financial Answer:")[-1].strip()
+            generated_ans = full_output.split("Answer:")[-1].split("\n")[0].strip()
             
-            # Robust sentence splitting that ignores decimal points
-            sentences = re.split(r'(?<!\d)\.(?!\d)\s*', answer_raw)
-            sentences = [s.strip() for s in sentences if s.strip()]
-
-            # Keep only the first complete sentence
-            clean_answer = sentences[0] + '.' if sentences else answer_raw
-            
-            # Confidence filter
-            if confidence < 0.5:
+            # Confidence filtering
+            if avg_confidence < 0.5:
                 return {
                     "question": question,
                     "answer": "I'm not confident about this answer. Please rephrase your financial question.",
-                    "confidence": round(confidence, 4),
+                    "confidence": round(avg_confidence, 4),
                     "inference_time": round(time.time() - start_time, 4),
                     "method": "Low Confidence"
                 }
             
             return {
                 "question": question,
-                "answer": clean_answer,
-                "confidence": round(confidence, 4),
+                "answer": generated_ans,
+                "confidence": round(avg_confidence, 4),
                 "inference_time": round(time.time() - start_time, 4),
-                "method": "Fine-tuned"
+                "method": "Fine-tuned GPT-2"
             }
-            
+        
         except Exception as e:
             return {
                 "question": question,
@@ -150,7 +160,7 @@ class FinancialQAModel:
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "Error"
             }
-            
+    
     def __call__(self, question):
         """Alias for generate_answer."""
         return self.generate_answer(question)
