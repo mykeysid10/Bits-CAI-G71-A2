@@ -206,7 +206,7 @@ class RAGSystem:
             confidence = round(min(max(float(result.get('score', 0.0)), 0.0), 1.0), 2)
             
             # Add confidence threshold check
-            if confidence < 0.5:
+            if confidence < 0.4:
                 return {
                     "question": query,
                     "answer": "I'm not confident about this answer. Could you please rephrase your financial question?",
