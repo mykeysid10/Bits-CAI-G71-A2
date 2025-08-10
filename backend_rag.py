@@ -92,10 +92,15 @@ class RAGSystem:
         start_time = time.time()
         
         os.makedirs('local_models', exist_ok=True)
+        
+        # Get device first
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        
+        # Load model directly to device
         self.embed_model = SentenceTransformer(
             'all-MiniLM-L6-v2',
             cache_folder='local_models',
-            device='cuda' if torch.cuda.is_available() else 'cpu'
+            device=device
         )
         
         self.faiss_index = faiss.read_index(os.path.join(self.artifacts_dir, "faiss_index.index"))
