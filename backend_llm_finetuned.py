@@ -41,15 +41,19 @@ class InputGuardrails:
 
 class FinancialQAModel:
     """Fine-tuned model with confidence filtering and complete sentence generation."""
-    
+
     def __init__(self, model_path, tokenizer_path):
         """Initialize model components."""
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
         self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model = AutoModelForCausalLM.from_pretrained(model_path)
-        self.guardrails = InputGuardrails()
+        # Get device first
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model.to(self.device)
+        # Load model directly to device
+        self.model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            device_map=self.device
+        )
+        self.guardrails = InputGuardrails()
     
     def generate_answer(self, question):
         """Generate answer with validation, confidence checks, and strict cleanup."""
