@@ -1,4 +1,4 @@
-# 💰 Financial Q&A System for Phillips Edison & Company
+# 💰 Financial Q&A System for Phillips Edison & Company.
 
 Developed as part of BITS CAI Assignment II by Group 71 [Sarit, Dhiman, Soumen, Omkar, Siddharth]
 
