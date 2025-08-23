@@ -42,18 +42,48 @@ class InputGuardrails:
 class FinancialQAModel:
     """Fine-tuned model with confidence filtering and complete sentence generation."""
 
+    # In backend_llm_finetuned.py - FinancialQAModel __init__ method
     def __init__(self, model_path, tokenizer_path):
         """Initialize model components."""
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        # Get device first
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        # Load model directly to device
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            device_map=self.device
-        )
+        print(f"🔄 Initializing Fine-Tuned Model from: {model_path}")
+        
+        try:
+            print("🔤 Loading tokenizer...")
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+            print("✅ Tokenizer loaded")
+            
+            # Get device first
+            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"🔧 Device set to: {self.device}")
+            
+            # Load model directly to device
+            print("🧠 Loading model...")
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map=self.device if self.device == "cuda" else None
+            )
+            print("✅ Model loaded successfully")
+            
+        except Exception as e:
+            print(f"❌ Error loading fine-tuned model: {str(e)}")
+            print("🔄 Trying alternative loading method...")
+            try:
+                # Fallback: load to CPU first
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    model_path,
+                    device_map=None,
+                    torch_dtype=torch.float32
+                )
+                if self.device == "cuda":
+                    self.model = self.model.to(self.device)
+                print("✅ Model loaded with fallback method")
+            except Exception as e2:
+                print(f"❌ All loading methods failed: {str(e2)}")
+                raise RuntimeError(f"Could not load model: {str(e2)}")
+        
         self.guardrails = InputGuardrails()
+        print("✅ Fine-Tuned Model initialized successfully")
     
     def generate_answer(self, question):
         """Generate answer with validation, confidence checks, and strict cleanup."""
