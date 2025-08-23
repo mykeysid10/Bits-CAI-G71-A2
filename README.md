@@ -37,4 +37,4 @@ Implements both:
 
 ## Demo Video:
 
-https://github.com/mykeysid10/Melanoma-Detection/assets/70707011/405e8cd8-ff17-4ecd-acee-d5145f99e71a
+https://github.com/mykeysid10/Bits-CAI-G71-A2/blob/main/Hosted_Demo_Recording.mp4
