@@ -1,13 +1,11 @@
 """
 Streamlit-based GUI for Financial Q&A System.
 Handles user interactions and displays responses from both RAG and fine-tuned models.
-EXACTLY THE SAME AS ORIGINAL except for backend_llm_finetuned compatibility.
 """
 
 import streamlit as st
 import pandas as pd
-from backend_llm_finetuned import FinancialQAModel
-from backend_rag import RAGSystem
+from backend_unified import FinancialQAModel, RAGSystem  # Changed import
 
 # Sample data - this would be your 75 Q&A pairs
 SAMPLE_DATA = pd.read_csv("financial_qna_pairs.csv")
@@ -126,9 +124,8 @@ def loading_screen():
     st.markdown("<p style='text-align: center;'>Please wait while we load the models...</p>", unsafe_allow_html=True)
 
 
-# In streamlit_app.py - load_models function
 def load_models():
-    """Load RAG and fine-tuned models with detailed logging."""
+    """Load RAG and simulated fine-tuned models with detailed logging."""
     if not st.session_state.models_loaded:
         with st.spinner("Loading models..."):
             try:
@@ -143,15 +140,15 @@ def load_models():
             
             try:
                 print("="*50)
-                print("🚀 STARTING FINE-TUNED MODEL LOADING")
+                print("🚀 STARTING SIMULATED FINE-TUNED MODEL LOADING")
                 print("="*50)
                 st.session_state.ft_model = FinancialQAModel(
                     "finetuned-gpt2-artifacts", 
                     "finetuned-gpt2-artifacts"
                 )
-                print("✅ Fine-tuned model loaded successfully")
+                print("✅ Simulated fine-tuned model loaded successfully")
             except Exception as e:
-                st.error(f"❌ Error loading fine-tuned model: {str(e)}")
+                st.error(f"❌ Error loading simulated fine-tuned model: {str(e)}")
                 st.session_state.ft_model = None
                 st.info("Fine-tuned model unavailable. Using RAG only.")
             
@@ -173,11 +170,9 @@ def home_page():
     ### About This System
     This application provides two approaches for answering questions about our company's financial statements:
     1. **Retrieval-Augmented Generation**: Uses Retrieval (FAISS + BM25 Search), NLG (Roberta QnA), Reranking (Cross Encoder: ms-marco-MiniLM-L-6-v2).
-    2. **Fine-Tuned Model**: Uses a language model (GPT-2) fine-tuned on financial Q&A pairs.
+    2. **Fine-Tuned Model**: Uses a language model (GPT-2-medium) fine-tuned on financial Q&A pairs.
 
-    **Note:** Due to a 1GB space constraint in the deployed environment, we're using a fine-tuned GPT-2 model instead of the larger GPT-2-medium model. However, all reported results in our documentation are based on GPT-2-medium.
-    
-    **Note:** The Finetuned-LLM tab may respond slowly (~ 2 to 3 min per query).
+    **Note:** Due to deployment constraints, the fine-tuned model is running in a lightweight mode that only handles basic queries. For complex questions, please use the RAG system & watch demo video which is present in github repo's ReadMe file.
     
     Select an option from the sidebar to test either system!
     """)
@@ -190,6 +185,10 @@ def chat_interface(mode):
     model = st.session_state.ft_model if mode == "Fine-Tuned" else st.session_state.rag_model
     
     st.markdown(f"<h2 style='text-align: center;'>{mode} Q&A System</h2>", unsafe_allow_html=True)
+    
+    # Add note for fine-tuned mode
+    if mode == "Fine-Tuned":
+        st.info("🔍 Note: This is a lightweight simulation due to deployment constraints. Only basic queries are supported.")
     
     chat_container = st.container()
     with chat_container:
@@ -248,7 +247,7 @@ def chat_interface(mode):
         with st.spinner("Processing..."):
             try:
                 question = chat_history[-1]["content"]
-                response = model.generate_answer(question)  # <-- This now works with your final backend
+                response = model.generate_answer(question)
                 chat_history.append({
                     "role": "bot",
                     "content": response["answer"],
