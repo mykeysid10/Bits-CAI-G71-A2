@@ -35,6 +35,6 @@ Implements both:
 | QA Pipeline             | roberta-base-squad2                      |
 | Frontend                | Streamlit                                |
 
-## Demo Video:
+## 🎬 Demo
 
 [https://github.com/mykeysid10/Bits-CAI-G71-A2/blob/main/Hosted_Demo_Recording.mp4](https://github.com/user-attachments/assets/318c41d7-6208-424b-a6cb-167a83a94750)
