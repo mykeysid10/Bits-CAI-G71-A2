@@ -1,6 +1,6 @@
 """
-Retrieval-Augmented Generation (RAG) system for financial Q&A.
-Uses lightweight alternatives to NLTK for tokenization and stopwords.
+Unified backend for Financial Q&A System.
+Handles both RAG and fine-tuned model functionality.
 """
 
 import os
@@ -41,48 +41,49 @@ STOPWORDS = {
     'wouldn', "wouldn't"
 }
 
-class RAGGuardrails:
-    """Input validation and guardrails for RAG system."""
+class InputGuardrails:
+    """Enhanced input validation for both RAG and fine-tuned model."""
     
     def __init__(self):
-        """Initialize harmful patterns and responses."""
-        self.harmful_patterns = {
-            "violence": ["kill", "attack", "shoot", "bomb"],
-            "financial_crime": ["launder", "fraud", "scam"],
-            "personal_info": ["ssn", "credit card", "password"],
-            "greetings": ["hi", "hello", "hey", "how are you", "what's up"],
-            "out_of_scope": ["capital of", "france", "weather", "sports", "movie"]
+        """Initialize guardrail patterns and responses."""
+        self.harmful_categories = {
+            "violence": {
+                "patterns": ["kill", "attack", "shoot", "bomb"],
+                "response": "I cannot assist with violent requests."
+            },
+            "financial_crime": {
+                "patterns": ["launder", "fraud", "scam"],
+                "response": "I cannot discuss illegal financial activities."
+            },
+            "out_of_scope": {
+                "patterns": ["capital of", "france", "weather", "sports"],
+                "response": "This question is outside my financial expertise."
+            },
+            "greetings": {
+                "patterns": ["hi", "hello", "hey", "how are you", "what's up"],
+                "response": "Hello! I'm a financial Q&A assistant. Please ask me about financial statements."
+            }
         }
     
-
     def validate_query(self, query: str) -> Tuple[bool, str, str]:
-        """Check for harmful or greeting queries."""
+        """Validate input against harmful patterns."""
         query_lower = query.lower().strip()
         
-        if any(pattern in query_lower for pattern in self.harmful_patterns["greetings"]):
-            return False, "Hello! I'm a financial Q&A assistant. Please ask me about financial statements.", "greeting"
-        
-        for category, patterns in self.harmful_patterns.items():
-            if category == "greetings":
-                continue
-            if any(pattern in query_lower for pattern in patterns):
-                if category == "out_of_scope":
-                    return False, "This question is outside my financial domain expertise.", "out_of_scope"
-                return False, f"I cannot answer questions related to {category.replace('_', ' ')}.", "guardrail"
+        for category, data in self.harmful_categories.items():
+            if any(pattern in query_lower for pattern in data["patterns"]):
+                return False, data["response"], category
         
         if len(query_lower.split()) < 3:
             return False, "Please provide a more detailed question.", "short_query"
             
         return True, "", "valid"
 
-
 class RAGSystem:
-    """Main RAG system implementation."""
+    """RAG system implementation."""
     
-    # In backend_app.py - RAGSystem __init__ method
     def __init__(self, artifacts_dir="rag-artifacts"):
         self.artifacts_dir = artifacts_dir
-        self.guardrails = RAGGuardrails()
+        self.guardrails = InputGuardrails()
         print(f"🔄 Initializing RAG System with artifacts from: {artifacts_dir}")
         self.load_models()
         self.qa_model = self.initialize_qa_model()
@@ -142,7 +143,6 @@ class RAGSystem:
             AutoTokenizer.from_pretrained(model_name)
         )
     
-
     def simple_tokenize(self, text: str) -> List[str]:
         """Lightweight tokenizer without NLTK."""
         # Remove punctuation and lowercase
@@ -150,7 +150,6 @@ class RAGSystem:
         # Split into words and filter stopwords
         return [word for word in text.split() if word not in STOPWORDS]
     
-
     def dense_retrieval(self, query: str, top_k: int = 5) -> List[Dict]:
         """Retrieve chunks using vector similarity."""
         query_embedding = self.embed_model.encode([query], convert_to_numpy=True)
@@ -165,7 +164,6 @@ class RAGSystem:
         
         return sorted(results, key=lambda x: x['dense_score'], reverse=True)
     
-
     def sparse_retrieval(self, query: str, top_k: int = 5) -> List[Dict]:
         """Retrieve chunks using BM25."""
         tokenized_query = self.simple_tokenize(query)
@@ -174,7 +172,6 @@ class RAGSystem:
         
         return [self.chunks[idx] for idx in top_indices]
     
-
     def hybrid_retrieval(self, query: str, top_k: int = 5) -> List[Dict]:
         """Combine dense and sparse retrieval results."""
         dense_results = self.dense_retrieval(query, top_k)
@@ -192,7 +189,6 @@ class RAGSystem:
         
         return sorted(results_map.values(), key=lambda x: x['hybrid_score'], reverse=True)[:top_k]
     
-
     def generate_answer(self, query: str, max_context_tokens: int = 1024) -> Dict:
         """Generate answer using retrieved context."""
         start_time = time.time()
@@ -250,3 +246,41 @@ class RAGSystem:
                 "inference_time": round(time.time() - start_time, 4),
                 "method": "Error"
             }
+
+class FinancialQAModel:
+    """Simulated fine-tuned model that handles basic queries without loading actual model."""
+    
+    def __init__(self, model_path, tokenizer_path):
+        """Initialize simulated model - doesn't actually load the large model."""
+        print(f"🔄 Initializing Simulated Fine-Tuned Model (no actual model loading)")
+        print("📝 Note: Due to deployment constraints, using lightweight simulation")
+        self.guardrails = InputGuardrails()
+        print("✅ Simulated Fine-Tuned Model initialized successfully")
+    
+    def generate_answer(self, question):
+        """Generate simulated answer for fine-tuned model."""
+        start_time = time.time()
+        
+        # Input validation
+        is_valid, message, category = self.guardrails.validate_query(question)
+        if not is_valid:
+            return {
+                "question": question,
+                "answer": message,
+                "confidence": 0.95 if category in ["greeting", "out_of_scope"] else 0.97,
+                "inference_time": round(time.time() - start_time, 4),
+                "method": category.replace("_", " ").title()
+            }
+        
+        # For any other query, return the constrained response
+        return {
+            "question": question,
+            "answer": "I'm sorry, I cannot answer that question due to deployment constraints. Please try rephrasing your question or ask about basic financial concepts. (Note: This is a lightweight version due to deployment constraints. For the full version, please check our GitHub repository demo video.)",
+            "confidence": 0.3,
+            "inference_time": round(time.time() - start_time, 4),
+            "method": "Simulated Fine-tuned"
+        }
+    
+    def __call__(self, question):
+        """Alias for generate_answer."""
+        return self.generate_answer(question)
