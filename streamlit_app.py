@@ -126,20 +126,40 @@ def loading_screen():
     st.markdown("<p style='text-align: center;'>Please wait while we load the models...</p>", unsafe_allow_html=True)
 
 
+# In streamlit_app.py - load_models function
 def load_models():
-    """Load RAG and fine-tuned models."""
+    """Load RAG and fine-tuned models with detailed logging."""
     if not st.session_state.models_loaded:
         with st.spinner("Loading models..."):
             try:
+                print("="*50)
+                print("🚀 STARTING RAG MODEL LOADING")
+                print("="*50)
                 st.session_state.rag_model = RAGSystem(artifacts_dir="rag-artifacts")
+                print("✅ RAG model loaded successfully")
+            except Exception as e:
+                st.error(f"❌ Error loading RAG model: {str(e)}")
+                st.session_state.rag_model = None
+            
+            try:
+                print("="*50)
+                print("🚀 STARTING FINE-TUNED MODEL LOADING")
+                print("="*50)
                 st.session_state.ft_model = FinancialQAModel(
                     "finetuned-gpt2-artifacts", 
                     "finetuned-gpt2-artifacts"
                 )
-                st.session_state.models_loaded = True
+                print("✅ Fine-tuned model loaded successfully")
             except Exception as e:
-                st.error(f"Error loading models: {str(e)}")
-                st.stop()
+                st.error(f"❌ Error loading fine-tuned model: {str(e)}")
+                st.session_state.ft_model = None
+                st.info("Fine-tuned model unavailable. Using RAG only.")
+            
+            # Mark as loaded even if some models failed
+            st.session_state.models_loaded = True
+            print("="*50)
+            print("🎉 ALL MODELS LOADING COMPLETED")
+            print("="*50)
 
 
 def home_page():
@@ -338,7 +358,6 @@ def main():
             chat_interface(st.session_state.current_mode)
         else:
             exit_options(st.session_state.current_mode)
-
 
 if __name__ == "__main__":
     main()
