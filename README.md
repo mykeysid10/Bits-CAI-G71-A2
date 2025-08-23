@@ -34,3 +34,7 @@ Implements both:
 | Embeddings              | all-MiniLM-L6-v2                         |
 | QA Pipeline             | roberta-base-squad2                      |
 | Frontend                | Streamlit                                |
+
+## Demo Video:
+
+https://github.com/mykeysid10/Melanoma-Detection/assets/70707011/405e8cd8-ff17-4ecd-acee-d5145f99e71a
