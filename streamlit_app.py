@@ -5,7 +5,7 @@ Handles user interactions and displays responses from both RAG and fine-tuned mo
 
 import streamlit as st
 import pandas as pd
-from backend_unified import FinancialQAModel, RAGSystem  # Changed import
+from backend import FinancialQAModel, RAGSystem
 
 # Sample data - this would be your 75 Q&A pairs
 SAMPLE_DATA = pd.read_csv("financial_qna_pairs.csv")
