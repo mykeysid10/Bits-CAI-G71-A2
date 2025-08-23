@@ -79,46 +79,60 @@ class RAGGuardrails:
 class RAGSystem:
     """Main RAG system implementation."""
     
+    # In backend_app.py - RAGSystem __init__ method
     def __init__(self, artifacts_dir="rag-artifacts"):
         self.artifacts_dir = artifacts_dir
         self.guardrails = RAGGuardrails()
+        print(f"🔄 Initializing RAG System with artifacts from: {artifacts_dir}")
         self.load_models()
         self.qa_model = self.initialize_qa_model()
-    
+        print("✅ RAG System initialized successfully")
 
     def load_models(self):
         """Load pre-built models and indexes."""
-        print("Loading RAG models and indexes...")
+        print("📦 Loading RAG models and indexes...")
         start_time = time.time()
         
         os.makedirs('local_models', exist_ok=True)
         
         # Get device first
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print(f"🔧 Device set to: {device}")
         
         # Load model directly to device
+        print("🔌 Loading embedding model...")
         self.embed_model = SentenceTransformer(
             'all-MiniLM-L6-v2',
             cache_folder='local_models',
             device=device
         )
+        print("✅ Embedding model loaded")
         
+        print("📊 Loading FAISS index...")
         self.faiss_index = faiss.read_index(os.path.join(self.artifacts_dir, "faiss_index.index"))
+        print("✅ FAISS index loaded")
+        
+        print("📋 Loading BM25 index...")
         with open(os.path.join(self.artifacts_dir, "bm25_index.pkl"), "rb") as f:
             self.bm25_index, self.chunks = pickle.load(f)
+        print("✅ BM25 index loaded")
         
+        print("⚖️ Loading cross-encoder...")
         self.cross_encoder_model, self.cross_encoder_tokenizer = self.initialize_cross_encoder()
-        print(f"Models loaded in {time.time() - start_time:.2f} seconds")
-    
+        print("✅ Cross-encoder loaded")
+        
+        print(f"🎉 RAG models loaded in {time.time() - start_time:.2f} seconds")
 
     def initialize_qa_model(self):
         """Initialize QA model pipeline."""
+        print("❓ Loading QA model...")
+        device = 0 if torch.cuda.is_available() else -1
+        print(f"🔧 QA model device: {device}")
         return pipeline(
             "question-answering",
             model="deepset/roberta-base-squad2",
-            device=0 if torch.cuda.is_available() else -1
+            device=device
         )
-    
 
     def initialize_cross_encoder(self):
         """Initialize cross-encoder for reranking."""
